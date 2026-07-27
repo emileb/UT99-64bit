@@ -64,6 +64,10 @@ void TouchInterface::createControls(std::string filesPath)
     // Arrow/enter buttons removed: the menu is mouse-driven.
     tcMenuMain->addControl(new touchcontrols::Button("keyboard", touchcontrols::RectF(18, 0, 20, 2), "keyboard", KEY_SHOW_KBRD));
 
+    // Also in the menu layout: the speech window counts as a menu, so this is
+    // what closes it again.
+    tcMenuMain->addControl(new touchcontrols::Button("voice_menu", touchcontrols::RectF(16, 0, 18, 2), "chat", PORT_ACT_VOICE_MENU));
+
     tcMenuMain->addControl(new touchcontrols::Button("gamepad", touchcontrols::RectF(22, 0, 24, 2), "gamepad", KEY_SHOW_GAMEPAD));
     tcMenuMain->addControl(new touchcontrols::Button("gyro", touchcontrols::RectF(24, 0, 26, 2), "gyro", KEY_SHOW_GYRO));
     tcMenuMain->addControl(new touchcontrols::Button("load_save_touch", touchcontrols::RectF(20, 0, 22, 2), "touchscreen_save", KEY_LOAD_SAVE_CONTROLS));
@@ -97,6 +101,7 @@ void TouchInterface::createControls(std::string filesPath)
     tcGameMain->addControl(new touchcontrols::Button("quick_load", touchcontrols::RectF(20, 0, 22, 2), "load", PORT_ACT_QUICKLOAD, false, false, "Quick load"));
 
     tcGameMain->addControl(new touchcontrols::Button("keyboard", touchcontrols::RectF(8, 0, 10, 2), "keyboard", KEY_SHOW_KBRD, false, false, "Show keyboard"));
+    tcGameMain->addControl(new touchcontrols::Button("voice_menu", touchcontrols::RectF(16, 0, 18, 2), "chat", PORT_ACT_VOICE_MENU, false, false, "Voice menu"));
     tcGameMain->addControl(new touchcontrols::Button("show_mouse", touchcontrols::RectF(4, 0, 6, 2), "left_mouse", KEY_USE_MOUSE, false, true, "Use mouse"));
 
     bool hideJump = false;

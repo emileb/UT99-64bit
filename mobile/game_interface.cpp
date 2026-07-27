@@ -17,6 +17,7 @@
 #include <android/log.h>
 
 #include "Engine.h"
+#include "UnCon.h" // UConsole, not pulled in by Engine.h
 #include "game_interface.h"
 
 // Engine entry point (UnrealTournament/Src/Launch.cpp).
@@ -28,6 +29,11 @@ extern "C" int SDL_SendKeyboardKey(Uint8 state, SDL_Scancode scancode);
 // Defined in NSDLDrv/Src/NSDLViewport.cpp (Android-only).
 extern "C" int UT99_IsMenuActive();
 extern "C" UViewport *UT99_GetViewport();
+
+// Script-VM voice-menu hook (Core/Src/UnCorSc.cpp): GAndroidSpeechCalls is
+// bumped on every PlayerPawn.Speech call, matched by the FName index we fill in.
+extern "C" volatile INT GAndroidSpeechCalls;
+extern "C" INT GAndroidSpeechName;
 
 static void sendKey(int state, SDL_Scancode scancode)
 {
@@ -119,12 +125,17 @@ enum
     RK_STRAFE_RIGHT_KEY = IK_Unknown8E, // digital: strafe right
 };
 
-static bool s_reservedKeysBound = false;
+static bool s_engineSetupDone = false;
 
-static void ensureReservedKeysBound(UViewport *vp)
+// One-time setup on the engine thread.
+static void ensureEngineSetup(UViewport *vp)
 {
-    if (s_reservedKeysBound)
+    if (s_engineSetupDone)
         return;
+
+    // Arms the script VM's voice-menu hook: it compares this index, so keeping
+    // the lookup out here leaves an int compare on the interpreter's hot path.
+    GAndroidSpeechName = FName(TEXT("Speech"), FNAME_Add).GetIndex();
 
     // Same raw commands the ini's MoveForward/TurnRight/StrafeRight resolve to
     // (analog keys take the positive half - our own sign supplies the direction;
@@ -137,7 +148,7 @@ static void ensureReservedKeysBound(UViewport *vp)
     vp->Input->Bindings[RK_STRAFE_LEFT_KEY]  = TEXT("Axis aStrafe Speed=-300.0");
     vp->Input->Bindings[RK_STRAFE_RIGHT_KEY] = TEXT("Axis aStrafe Speed=+300.0");
 
-    s_reservedKeysBound = true;
+    s_engineSetupDone = true;
 }
 
 // Cross-thread state: written on the touch thread, read only by
@@ -155,6 +166,9 @@ static volatile bool s_wantStrafeLeft = false, s_wantStrafeRight = false;
 // Held real buttons, diffed against the last-applied state each tick.
 static volatile bool s_wantFire = false, s_wantAltFire = false, s_wantDuck = false;
 static volatile bool s_wantWalk = false, s_wantStrafeMod = false;
+
+// Voice (speech) menu toggle request, consumed on the engine thread.
+static volatile bool s_wantVoiceMenuToggle = false;
 
 // One-shot commands, single-producer / single-consumer ring buffer.
 #define CMD_QUEUE_LEN 32
@@ -187,6 +201,13 @@ void PortableAction(int state, int action)
             sendKey(state, (SDL_Scancode)(SDL_SCANCODE_KP_1 + action - PORT_ACT_CUSTOM_0));
         else
             sendKey(state, (SDL_Scancode)(SDL_SCANCODE_A + action - PORT_ACT_CUSTOM_10));
+    }
+    else if (action == PORT_ACT_VOICE_MENU)
+    {
+        // Handled in both screen modes: the speech window itself counts as a
+        // menu, so this is also the button that closes it again.
+        if (state)
+            s_wantVoiceMenuToggle = true;
     }
     else if (PortableGetScreenMode() == TS_MENU)
     {
@@ -395,12 +416,70 @@ static void applyAliasHold(UViewport *vp, const char *aliasName, bool want, bool
     held = want;
 }
 
+// Voice menu: UTMenu.UTConsole opens its speech window on a raw press of the
+// configured SpeechKey and closes it on the matching release. Both the key and
+// the open flag live in the compiled script classes, hence the lookups by name.
+static UConsole *voiceMenuState(UViewport *vp, BYTE &speechKey, bool &shown)
+{
+    UConsole *console = vp->Console;
+    if (!console)
+        return NULL;
+
+    UByteProperty *keyProp = FindField<UByteProperty>(console->GetClass(), TEXT("SpeechKey"));
+    UBoolProperty *shownProp = FindField<UBoolProperty>(console->GetClass(), TEXT("bShowSpeech"));
+    if (!keyProp || !shownProp)
+        return NULL; // not a UTConsole
+
+    speechKey = *(BYTE *)((BYTE *)console + keyProp->Offset);
+    shown = (*(DWORD *)((BYTE *)console + shownProp->Offset) & shownProp->BitMask) != 0;
+    return console;
+}
+
+static void closeVoiceMenu(UViewport *vp)
+{
+    BYTE speechKey = 0;
+    bool shown = false;
+    UConsole *console = voiceMenuState(vp, speechKey, shown);
+    if (!console || !shown)
+        return;
+
+    if (speechKey)
+        console->eventKeyEvent(speechKey, IST_Release, 0.0f);
+
+    // The release only reaches the handler while the console is still in its
+    // UWindow state; anything else that left it (Escape closes the window group
+    // but leaves bShowSpeech set) would strand the window on screen.
+    voiceMenuState(vp, speechKey, shown);
+    if (shown)
+    {
+        UFunction *hide = console->FindFunction(FName(TEXT("HideSpeech"), FNAME_Find));
+        if (hide)
+            console->ProcessEvent(hide, NULL);
+    }
+}
+
+// A touch button can't hold the key down, so it sends whichever half doesn't
+// match the console's current state.
+static void toggleVoiceMenu(UViewport *vp)
+{
+    BYTE speechKey = 0;
+    bool shown = false;
+    UConsole *console = voiceMenuState(vp, speechKey, shown);
+    if (!console || !speechKey) // no console, or unbound in the Speech Binder menu
+        return;
+
+    if (shown)
+        closeVoiceMenu(vp);
+    else
+        console->eventKeyEvent(speechKey, IST_Press, 0.0f);
+}
+
 extern "C" void UT99_TickPortableActions()
 {
     UViewport *vp = UT99_GetViewport();
     if (!vp || !vp->Input)
         return;
-    ensureReservedKeysBound(vp);
+    ensureEngineSetup(vp);
 
     static DOUBLE lastTime = 0.0;
     DOUBLE now = appSeconds();
@@ -436,6 +515,21 @@ extern "C" void UT99_TickPortableActions()
         MouseMove(yaw, pitch);
     s_lookYawMouse = 0.0f;
     s_lookPitchMouse = 0.0f;
+
+    if (s_wantVoiceMenuToggle)
+    {
+        s_wantVoiceMenuToggle = false;
+        toggleVoiceMenu(vp);
+    }
+
+    // Picking a message doesn't close the window (on PC you just let go of the
+    // key), so close it as soon as one is actually sent.
+    static INT lastSpeechCalls = 0;
+    if (GAndroidSpeechCalls != lastSpeechCalls)
+    {
+        lastSpeechCalls = GAndroidSpeechCalls;
+        closeVoiceMenu(vp);
+    }
 
     while (s_cmdUsed != s_cmdAvail)
     {

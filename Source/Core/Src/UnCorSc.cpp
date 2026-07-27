@@ -3614,6 +3614,19 @@ struct FOutParmRec
 	BYTE*      PropAddr;
 };
 
+#ifdef __ANDROID__
+// Bumped whenever script calls PlayerPawn.Speech - the only signal that the
+// voice menu's selection went through, so the touch layer can close the window
+// (see mobile/game_interface.cpp; it has no close-on-select of its own).
+// GAndroidSpeechName is that function's FName index, filled in once by the
+// mobile glue; INDEX_NONE never matches, so the hook is inert until then.
+extern "C"
+{
+	volatile INT GAndroidSpeechCalls = 0;
+	INT GAndroidSpeechName = INDEX_NONE;
+}
+#endif
+
 //
 // Call a function.
 //
@@ -3622,6 +3635,10 @@ void UObject::CallFunction( FFrame& Stack, RESULT_DECL, UFunction* Function )
 	guardSlow(UObject::CallFunction);
 #if DO_GUARD_SLOW
 	DWORD Cycles=0; clock(Cycles);
+#endif
+#ifdef __ANDROID__
+	if( Function->GetFName().GetIndex()==GAndroidSpeechName )
+		GAndroidSpeechCalls++;
 #endif
 	// Found it.
 	UBOOL SkipIt = 0;
