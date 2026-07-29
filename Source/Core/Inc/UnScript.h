@@ -120,7 +120,7 @@ inline void FFrame::Step( UObject* Context, RESULT_DECL )
 }
 inline INT FFrame::ReadInt()
 {
-#ifdef PLATFORM_DREAMCAST
+#if defined(PLATFORM_DREAMCAST) || defined(__ANDROID__)
 	INT Result;
 	__builtin_memcpy( &Result, Code, sizeof( Result ) );
 #else
@@ -134,7 +134,7 @@ inline UObject* FFrame::ReadObject()
 	// Bytecode object references are stored as 4-byte GObjObjects indices
 	// (see XFER_OBJ in UStruct::SerializeExpr), never as raw pointers, so the
 	// in-memory bytecode layout is identical on 32- and 64-bit machines.
-#ifdef PLATFORM_DREAMCAST
+#if defined(PLATFORM_DREAMCAST) || defined(__ANDROID__)
 	INT Index;
 	__builtin_memcpy( &Index, Code, sizeof( Index ) );
 #else
@@ -145,7 +145,7 @@ inline UObject* FFrame::ReadObject()
 }
 inline FLOAT FFrame::ReadFloat()
 {
-#ifdef PLATFORM_DREAMCAST
+#if defined(PLATFORM_DREAMCAST) || defined(__ANDROID__)
 	FLOAT Result;
 	__builtin_memcpy( &Result, Code, sizeof( Result ) );
 #else
@@ -156,7 +156,7 @@ inline FLOAT FFrame::ReadFloat()
 }
 inline INT FFrame::ReadWord()
 {
-#ifdef PLATFORM_DREAMCAST
+#if defined(PLATFORM_DREAMCAST) || defined(__ANDROID__)
 	_WORD Result;
 	__builtin_memcpy( &Result, Code, sizeof( Result ) );
 #else
@@ -167,7 +167,7 @@ inline INT FFrame::ReadWord()
 }
 inline FName FFrame::ReadName()
 {
-#ifdef PLATFORM_DREAMCAST
+#if defined(PLATFORM_DREAMCAST) || defined(__ANDROID__)
 	FName Result;
 	__builtin_memcpy( &Result, Code, sizeof( Result ) );
 #else
