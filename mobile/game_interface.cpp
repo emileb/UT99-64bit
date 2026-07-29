@@ -486,6 +486,65 @@ static void toggleVoiceMenu(UViewport *vp)
         console->eventKeyEvent(speechKey, IST_Press, 0.0f);
 }
 
+static FLOAT *windowFloat(UObject *window, const TCHAR *name)
+{
+    UFloatProperty *prop = FindField<UFloatProperty>(window->GetClass(), name);
+    return prop ? (FLOAT *)((BYTE *)window + prop->Offset) : NULL;
+}
+
+// UT's console is a UWindow window that sizes itself to a fixed 410x310 in root
+// units (UWindowConsoleWindow.SetDimensions), which overflows the screen at
+// GUIScale 2 and takes the input box with it. Re-place it across the top half
+// whenever it opens - the soft keyboard covers the bottom. All of it lives in
+// the compiled script classes, hence the lookups by name.
+static void placeConsoleWindow(UViewport *vp)
+{
+    UConsole *console = vp->Console;
+    if (!console)
+        return;
+
+    UObjectProperty *windowProp = FindField<UObjectProperty>(console->GetClass(), TEXT("ConsoleWindow"));
+    if (!windowProp)
+        return; // not a UWindowConsole
+    UObject *window = *(UObject **)((BYTE *)console + windowProp->Offset);
+    if (!window)
+        return;
+
+    UBoolProperty *visibleProp = FindField<UBoolProperty>(window->GetClass(), TEXT("bWindowVisible"));
+    UObjectProperty *parentProp = FindField<UObjectProperty>(window->GetClass(), TEXT("ParentWindow"));
+    if (!visibleProp || !parentProp)
+        return;
+
+    // Only on open, so the window stays where the player drags it afterwards.
+    UBOOL visible = (*(DWORD *)((BYTE *)window + visibleProp->Offset) & visibleProp->BitMask) != 0;
+    static UBOOL wasVisible = 0;
+    UBOOL justOpened = visible && !wasVisible;
+    wasVisible = visible;
+    if (!justOpened)
+        return;
+
+    UObject *root = *(UObject **)((BYTE *)window + parentProp->Offset);
+    if (!root)
+        return;
+
+    FLOAT *rootWidth = windowFloat(root, TEXT("WinWidth"));
+    FLOAT *rootHeight = windowFloat(root, TEXT("WinHeight"));
+    FLOAT *left = windowFloat(window, TEXT("WinLeft"));
+    FLOAT *top = windowFloat(window, TEXT("WinTop"));
+    FLOAT *width = windowFloat(window, TEXT("WinWidth"));
+    FLOAT *height = windowFloat(window, TEXT("WinHeight"));
+    if (!rootWidth || !rootHeight || !left || !top || !width || !height)
+        return;
+
+    // UWindowFramedWindow::BeforePaint re-derives the client area from these
+    // every frame, so the text area and input box reflow on their own.
+    *top = 0.0f;
+    *height = *rootHeight * 0.5f;
+    if (*width > *rootWidth)
+        *width = *rootWidth;
+    *left = (*rootWidth - *width) * 0.5f;
+}
+
 // -DodgeCooldown=true/false, EngineOptionsUT99. Absent (or false) means no
 // cooldown - see UT99_ApplyPendingDodge().
 static UBOOL dodgeCooldownEnabled()
@@ -577,6 +636,8 @@ extern "C" void UT99_TickPortableActions()
         MouseMove(yaw, pitch);
     s_lookYawMouse = 0.0f;
     s_lookPitchMouse = 0.0f;
+
+    placeConsoleWindow(vp);
 
     if (s_wantVoiceMenuToggle)
     {
