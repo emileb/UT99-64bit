@@ -407,7 +407,7 @@ void AActor::execPollSleep( FFrame& Stack, RESULT_DECL )
 {
 	guardSlow(AActor::execPollSleep);
 
-#ifdef PLATFORM_DREAMCAST
+#if defined(PLATFORM_DREAMCAST) || defined(__ANDROID__)
 	// try to avoid potential unaligned accesses
 	FLOAT DeltaSeconds = 0.0f;
 	__builtin_memcpy( (void*)&DeltaSeconds, (void*)Result, sizeof(FLOAT) );

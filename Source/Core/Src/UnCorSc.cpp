@@ -346,7 +346,7 @@ void UObject::execBoolVariable( FFrame& Stack, RESULT_DECL )
 	// Get bool variable.  The following variable opcode's operand is a 4-byte
 	// GObjObjects index (see XFER_OBJ in UStruct::SerializeExpr), not a pointer.
 	BYTE B = *Stack.Code++;
-#ifdef PLATFORM_DREAMCAST
+#if defined(PLATFORM_DREAMCAST) || defined(__ANDROID__)
 	INT PropIndex;
 	__builtin_memcpy( &PropIndex, Stack.Code, sizeof( PropIndex ) );
 #else

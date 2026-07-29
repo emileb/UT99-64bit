@@ -121,12 +121,19 @@ FLOAT FSoundData::GetPeriod()
 	if( WaveInfo.ReadWaveInfo(*this) )
 	{
 		#define DEFAULT_FREQUENCY (22050)
-#ifdef PLATFORM_DREAMCAST
-		INT SPS, Channels, BitsPerSample, WaveDataSize;
-		__builtin_memcpy( &SPS, WaveInfo.pSamplesPerSec, sizeof(INT) );
-		__builtin_memcpy( &Channels, WaveInfo.pChannels, sizeof(INT) );
-		__builtin_memcpy( &BitsPerSample, WaveInfo.pBitsPerSample, sizeof(INT) );
-		__builtin_memcpy( &WaveDataSize, WaveInfo.pWaveDataSize, sizeof(INT) );
+#if defined(PLATFORM_DREAMCAST) || defined(__ANDROID__)
+		// These point into the raw WAV bytes, so they can be unaligned. Copy each
+		// at its real width - pChannels/pBitsPerSample are 16-bit, not 32.
+		DWORD RawSPS, RawWaveDataSize;
+		_WORD RawChannels, RawBitsPerSample;
+		__builtin_memcpy( &RawSPS, WaveInfo.pSamplesPerSec, sizeof(RawSPS) );
+		__builtin_memcpy( &RawChannels, WaveInfo.pChannels, sizeof(RawChannels) );
+		__builtin_memcpy( &RawBitsPerSample, WaveInfo.pBitsPerSample, sizeof(RawBitsPerSample) );
+		__builtin_memcpy( &RawWaveDataSize, WaveInfo.pWaveDataSize, sizeof(RawWaveDataSize) );
+		INT SPS = RawSPS;
+		INT Channels = RawChannels;
+		INT BitsPerSample = RawBitsPerSample;
+		INT WaveDataSize = RawWaveDataSize;
 #else
 		INT SPS = *WaveInfo.pSamplesPerSec;
 		INT Channels = *WaveInfo.pChannels;
@@ -188,7 +195,7 @@ IMPLEMENT_CLASS(USound);
 //
 UBOOL FWaveModInfo::ReadWaveInfo( TArray<BYTE>& WavData )
 {
-#ifdef PLATFORM_DREAMCAST
+#if defined(PLATFORM_DREAMCAST) || defined(__ANDROID__)
 	guard(FWaveModInfo::ReadWaveInfo);
 
 	if( WavData.Num() < (INT)sizeof(FRiffWaveHeader) )

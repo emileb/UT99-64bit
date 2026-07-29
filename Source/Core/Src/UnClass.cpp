@@ -1141,7 +1141,7 @@ CORE_API FArchive& operator<<( FArchive& Ar, FLabelEntry &Label )
 /*-----------------------------------------------------------------------------
 	UStruct implementation.
 -----------------------------------------------------------------------------*/
-#ifdef PLATFORM_DREAMCAST
+#if defined(PLATFORM_DREAMCAST) || defined(__ANDROID__)
 template<typename T>
 static inline void XferAligned( FArchive& Ar, T* Ptr )
 {
@@ -1167,7 +1167,7 @@ EExprToken UStruct::SerializeExpr( INT& iCode, FArchive& Ar )
 {
 	EExprToken Expr=(EExprToken)0;
 	guard(SerializeExpr);
-	#ifdef PLATFORM_DREAMCAST
+	#if defined(PLATFORM_DREAMCAST) || defined(__ANDROID__)
 	#define XFER(T) {XferAligned(Ar, (T*)&Script(iCode)); iCode += sizeof(T);}
 	#define XFER_SCRIPT_INT_READ(Var)  __builtin_memcpy( &Var, &Script(iCode), sizeof(INT) );
 	#define XFER_SCRIPT_INT_WRITE(Var) __builtin_memcpy( &Script(iCode), &Var, sizeof(INT) );
@@ -1389,11 +1389,13 @@ EExprToken UStruct::SerializeExpr( INT& iCode, FArchive& Ar )
 		}
 		case EX_Case:
 		{
-#ifdef PLATFORM_DREAMCAST
-			// avoid unaligned access
-			_WORD W;
-			__builtin_memcpy( &W, &Script(iCode), sizeof( W ) );
+#if defined(PLATFORM_DREAMCAST) || defined(__ANDROID__)
+			// avoid unaligned access - read after the XFER, which is what fills
+			// Script(iCode) when loading.
+			INT iWord = iCode;
 			XFER(_WORD); // Code offset.
+			_WORD W;
+			__builtin_memcpy( &W, &Script(iWord), sizeof( W ) );
 			if( W != MAXWORD )
 				SerializeExpr( iCode, Ar ); // Boolean expr.
 #else
